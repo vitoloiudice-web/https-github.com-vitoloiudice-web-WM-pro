@@ -1,15 +1,16 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { XIcon } from './icons/HeroIcons.tsx';
+// FIX: Removed .tsx extension from import path.
+import { XIcon } from './icons/HeroIcons';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+const Modal = ({ isOpen, onClose, title, children }: ModalProps) => {
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -37,10 +38,10 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
       ></div>
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-lg z-50 animate-fade-in-up">
         <div className="flex justify-between items-center p-4 border-b border-slate-200">
-          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
+          <h3 className="text-lg font-semibold text-testo-input">{title}</h3>
           <button 
             onClick={onClose} 
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="text-testo-input/70 hover:text-testo-input p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-bottone-azione"
             aria-label="Close"
           >
             <XIcon />

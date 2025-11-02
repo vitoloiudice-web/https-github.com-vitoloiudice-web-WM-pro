@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase.ts';
+// FIX: Updated import to remove file extension
+import { db } from '../firebase';
 import { 
     collection, 
     onSnapshot, 
@@ -7,7 +8,13 @@ import {
     setDoc, 
     updateDoc, 
     deleteDoc, 
-    DocumentData 
+    addDoc, // Import addDoc
+    DocumentData,
+    QuerySnapshot,
+    DocumentSnapshot,
+    FirestoreError,
+    QueryDocumentSnapshot,
+    DocumentReference
 } from 'firebase/firestore';
 
 // Interface for documents that must have an ID
@@ -29,14 +36,14 @@ export const useCollection = <T extends FirestoreDocument>(collectionName: strin
         setLoading(true);
         const colRef = collection(db, collectionName);
 
-        const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        const unsubscribe = onSnapshot(colRef, (snapshot: QuerySnapshot<DocumentData>) => {
             const results: T[] = [];
-            snapshot.docs.forEach(doc => {
+            snapshot.docs.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
                 results.push({ ...doc.data(), id: doc.id } as T);
             });
             setData(results);
             setLoading(false);
-        }, (err) => {
+        }, (err: FirestoreError) => {
             console.error(`Error fetching collection ${collectionName}:`, err);
             setError(err);
             setLoading(false);
@@ -45,9 +52,11 @@ export const useCollection = <T extends FirestoreDocument>(collectionName: strin
         return () => unsubscribe();
     }, [collectionName]);
 
-    const addItem = async (item: T) => {
+    const addItem = async (item: Omit<T, 'id'>): Promise<DocumentReference> => {
         try {
-            await setDoc(doc(db, collectionName, item.id), item);
+            // Use addDoc for auto-generated IDs and return the reference
+            const docRef = await addDoc(collection(db, collectionName), item);
+            return docRef;
         } catch (e) {
             console.error("Error adding document: ", e);
             throw e; // Re-throw to be caught in the component
@@ -56,7 +65,11 @@ export const useCollection = <T extends FirestoreDocument>(collectionName: strin
 
     const updateItem = async (id: string, updates: Partial<T>) => {
         try {
-            await updateDoc(doc(db, collectionName, id), updates);
+            // FIX: The previous cast `as DocumentReference<T>` caused a type mismatch with the `updateDoc` function.
+            // Removing the cast allows TypeScript to correctly use the overload that accepts a
+            // generic `DocumentReference<DocumentData>`, which is compatible with `updates` of type `Partial<T>`.
+            const docRef = doc(db, collectionName, id);
+            await updateDoc(docRef, updates);
         } catch (e) {
             console.error("Error updating document: ", e);
             throw e;
@@ -75,7 +88,8 @@ export const useCollection = <T extends FirestoreDocument>(collectionName: strin
     const addBatch = async (items: T[]) => {
       for (const item of items) {
         try {
-          await setDoc(doc(db, collectionName, item.id), item);
+            const { id, ...data } = item;
+            await setDoc(doc(db, collectionName, id), data);
         } catch (e) {
           console.error(`Failed to add item ${item.id} to ${collectionName}`, e);
         }
@@ -101,7 +115,7 @@ export const useDocument = <T extends DocumentData>(collectionName: string, docI
         setLoading(true);
         const docRef = doc(db, collectionName, docId);
 
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        const unsubscribe = onSnapshot(docRef, (docSnap: DocumentSnapshot<DocumentData>) => {
             if (docSnap.exists()) {
                 setData(docSnap.data() as T);
             } else {
@@ -111,14 +125,14 @@ export const useDocument = <T extends DocumentData>(collectionName: string, docI
                 setDoc(docRef, initialData).catch(err => console.error("Could not create initial document", err));
             }
             setLoading(false);
-        }, (err) => {
+        }, (err: FirestoreError) => {
             console.error(`Error fetching document ${docId}:`, err);
             setError(err);
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, [collectionName, docId, initialData]);
+    }, [collectionName, docId]); // initialData removed from deps to avoid re-writing on every render
 
     const updateData = async (newData: Partial<T>) => {
         try {

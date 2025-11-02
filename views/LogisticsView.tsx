@@ -1,352 +1,392 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import Card, { CardContent, CardFooter } from '../components/Card.tsx';
-import { PlusIcon, BuildingOffice2Icon, CreditCardIcon, UserCircleIcon, EnvelopeIcon, PhoneIcon, PencilIcon, TrashIcon, LocationMarkerIcon, UsersIcon } from '../components/icons/HeroIcons.tsx';
-import Modal from '../components/Modal.tsx';
-import ConfirmModal from '../components/ConfirmModal.tsx';
-import Input from '../components/Input.tsx';
-import Select from '../components/Select.tsx';
-import type { Supplier, Location } from '../types.ts';
-
-type LogisticsTab = 'suppliers' | 'locations';
+import React, { useState, useEffect } from 'react';
+import Card, { CardContent } from '../components/Card';
+import { PlusIcon, PencilIcon, TrashIcon } from '../components/icons/HeroIcons';
+import Modal from '../components/Modal';
+import { ConfirmModal } from '../components/ConfirmModal';
+import Input from '../components/Input';
+import type { Supplier, Location } from '../types';
 
 interface LogisticsViewProps {
     suppliers: Supplier[];
-    addSupplier: (supplier: Supplier) => Promise<void>;
+    addSupplier: (item: Omit<Supplier, 'id'>) => Promise<{id: string}>;
     updateSupplier: (id: string, updates: Partial<Supplier>) => Promise<void>;
     removeSupplier: (id: string) => Promise<void>;
     locations: Location[];
-    addLocation: (location: Location) => Promise<void>;
+    addLocation: (item: Omit<Location, 'id'>) => Promise<void>;
     updateLocation: (id: string, updates: Partial<Location>) => Promise<void>;
     removeLocation: (id: string) => Promise<void>;
 }
 
-const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; }> = ({ label, isActive, onClick }) => (
-    <button
-        onClick={onClick}
-        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            isActive ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-200'
-        }`}
-    >
-        {label}
-    </button>
-)
+type SupplierModalState =
+    | { mode: 'new' }
+    | { mode: 'edit', supplier: Supplier }
+    | null;
 
-const DetailRow: React.FC<{icon: React.ReactNode, label: string, value: string | number}> = ({ icon, label, value }) => (
-    <div className="flex items-start space-x-3 text-slate-700 text-sm">
-        <span className="text-slate-400 mt-0.5">{icon}</span>
-        <div>
-            <span className="font-medium">{label}:</span>{' '}
-            <span>{value}</span>
-        </div>
-    </div>
-);
+type LocationModalState = 
+    | { mode: 'new' }
+    | { mode: 'edit', location: Partial<Location>, index: number }
+    | null;
 
-const SupplierCard: React.FC<{supplier: Supplier, onEdit: () => void, onDelete: () => void}> = ({supplier, onEdit, onDelete}) => (
-    <Card>
-        <CardContent>
-             <div className="flex justify-between items-start">
-                <div className="flex items-center space-x-4 mb-4">
-                    <div className="bg-slate-200 p-3 rounded-full">
-                        <BuildingOffice2Icon className="text-slate-500 h-8 w-8"/>
-                    </div>
-                    <div>
-                        <h4 className="font-bold text-lg text-slate-800">{supplier.name}</h4>
-                    </div>
-                </div>
-            </div>
-            <div className="space-y-2">
-                 <DetailRow icon={<CreditCardIcon className="h-5 w-5" />} label="P.IVA" value={supplier.vatNumber} />
-                 {supplier.address && <DetailRow icon={<LocationMarkerIcon className="h-5 w-5" />} label="Indirizzo" value={`${supplier.address}, ${supplier.zipCode || ''} ${supplier.city || ''} (${supplier.province || ''})`} />}
-                 {supplier.contactPerson && <DetailRow icon={<UserCircleIcon className="h-5 w-5" />} label="Referente" value={supplier.contactPerson} />}
-                 {supplier.email && <DetailRow icon={<EnvelopeIcon className="h-5 w-5" />} label="Email" value={supplier.email} />}
-                 {supplier.phone && <DetailRow icon={<PhoneIcon className="h-5 w-5" />} label="Telefono" value={supplier.phone} />}
-            </div>
-        </CardContent>
-        <CardFooter>
-            <div className="flex justify-end items-center space-x-2">
-                <button onClick={onEdit} className="p-2 text-slate-500 hover:text-indigo-600 rounded-full hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" aria-label="Modifica fornitore">
-                    <PencilIcon className="h-5 w-5"/>
-                </button>
-                <button onClick={onDelete} className="p-2 text-slate-500 hover:text-red-600 rounded-full hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500" aria-label="Elimina fornitore">
-                    <TrashIcon className="h-5 w-5"/>
-                </button>
-            </div>
-        </CardFooter>
-    </Card>
-);
+const COLORS = [
+    { name: "Verde", hex: "#00db00" },
+    { name: "Viola", hex: "#a200ff" },
+    { name: "Marrone", hex: "#80370d" },
+    { name: "Azzurro", hex: "#00e1ff" },
+    { name: "Giallo", hex: "#FFFF00" },
+    { name: "Rosso", hex: "#cc0606" },
+    { name: "Fucsia", hex: "#FF00FF" },
+    { name: "Lime", hex: "#93fc28" },
+    { name: "Ocra", hex: "#d6a913" },
+    { name: "Blu", hex: "#0303a3" },
+    { name: "Grigio", hex: "#808080" },
+    { name: "Arancio", hex: "#FF8000" },
+    { name: "Oliva", hex: "#014f01" },
+    { name: "Turchese", hex: "#279677" },
+    { name: "Nero", hex: "#000000" },
+];
 
-const LocationCard: React.FC<{location: Location, supplierName: string | null, onEdit: () => void, onDelete: () => void}> = ({location, supplierName, onEdit, onDelete}) => {
-    return (
-     <Card>
-        <CardContent>
-             <div className="flex justify-between items-start">
-                <div className="flex items-center space-x-4 mb-4">
-                    <div className="bg-slate-200 p-3 rounded-full">
-                        <LocationMarkerIcon className="text-slate-500 h-8 w-8"/>
-                    </div>
-                    <div>
-                        <h4 className="font-bold text-lg text-slate-800">{location.name}</h4>
-                         <p className="text-sm text-slate-500">{location.address}</p>
-                    </div>
-                </div>
-            </div>
-            <div className="space-y-2">
-                 <DetailRow icon={<UsersIcon className="h-5 w-5" />} label="Capienza" value={location.capacity} />
-                 {supplierName && (
-                    <DetailRow icon={<BuildingOffice2Icon className="h-5 w-5" />} label="Fornitore" value={supplierName} />
-                 )}
-            </div>
-        </CardContent>
-        <CardFooter>
-            <div className="flex justify-end items-center space-x-2">
-                <button onClick={onEdit} className="p-2 text-slate-500 hover:text-indigo-600 rounded-full hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" aria-label="Modifica luogo">
-                    <PencilIcon className="h-5 w-5"/>
-                </button>
-                <button onClick={onDelete} className="p-2 text-slate-500 hover:text-red-600 rounded-full hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500" aria-label="Elimina luogo">
-                    <TrashIcon className="h-5 w-5"/>
-                </button>
-            </div>
-        </CardFooter>
-    </Card>
-    );
-};
-
-
-const LogisticsView: React.FC<LogisticsViewProps> = ({ 
+const LogisticsView = ({
     suppliers, addSupplier, updateSupplier, removeSupplier,
     locations, addLocation, updateLocation, removeLocation
-}) => {
-    const [activeTab, setActiveTab] = useState<LogisticsTab>('suppliers');
-    
-    const [editingItem, setEditingItem] = useState<Supplier | Location | null>(null);
-    const [isNewItemModalOpen, setIsNewItemModalOpen] = useState(false);
-    const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+}: LogisticsViewProps) => {
+    // --- DEBUG START: LOGISTICS_RENDER ---
+    console.log('[DEBUG] LogisticsView: Component rendered.');
+    console.log('[DEBUG] LogisticsView: Props received:', { suppliers, locations });
+    // --- DEBUG END: LOGISTICS_RENDER ---
 
-    const [formData, setFormData] = useState<Record<string, any>>({});
-    const [errors, setErrors] = useState<Record<string, string>>({});
-    
-    const isModalOpen = isNewItemModalOpen || !!editingItem;
-    
-    const supplierMap = useMemo(() => suppliers.reduce((acc, s) => ({...acc, [s.id]: s}), {} as Record<string, Supplier>), [suppliers]);
+    const [supplierModalState, setSupplierModalState] = useState<SupplierModalState>(null);
+    const [locationModalState, setLocationModalState] = useState<LocationModalState>(null);
+    const [deletingItem, setDeletingItem] = useState<{ type: 'supplier' | 'location', id: string, name: string } | null>(null);
+
+    // State for the main supplier modal
+    const [supplierFormData, setSupplierFormData] = useState<Partial<Supplier>>({});
+    const [locationsInModal, setLocationsInModal] = useState<Partial<Location>[]>([]);
+    const [locationsToDelete, setLocationsToDelete] = useState<string[]>([]);
+    const [supplierErrors, setSupplierErrors] = useState<Record<string, string>>({});
+
+    // State for the nested location modal
+    const [locationFormData, setLocationFormData] = useState<Partial<Location>>({});
+    const [locationErrors, setLocationErrors] = useState<Record<string, string>>({});
+    const [isShortNameManual, setIsShortNameManual] = useState(false);
+
+    const generateShortName = (name: string): string => {
+        if (!name) return '';
+        const consonants = (name.match(/[bcdfghjklmnpqrstvwxyz]/ig) || []).join('');
+        return consonants.substring(0, 4).toUpperCase();
+    };
 
     useEffect(() => {
-        if (editingItem) {
-            setFormData(editingItem);
+        if (supplierModalState?.mode === 'edit') {
+            setSupplierFormData(supplierModalState.supplier);
+            const supplierLocations = locations.filter(loc => loc.supplierId === supplierModalState.supplier.id);
+            setLocationsInModal(supplierLocations);
         } else {
-            setFormData({});
+            setSupplierFormData({});
+            setLocationsInModal([]);
         }
-    }, [editingItem, isNewItemModalOpen]);
+        setLocationsToDelete([]);
+        setSupplierErrors({});
+    }, [supplierModalState, locations]);
 
-
-    const closeModal = () => {
-        setEditingItem(null);
-        setIsNewItemModalOpen(false);
-        setFormData({});
-        setErrors({});
-    };
-
-    const handleAddNewClick = () => {
-        setIsNewItemModalOpen(true);
-    };
-
-    const handleEditClick = (item: Supplier | Location) => {
-        setEditingItem(item);
-    };
-    
-    const handleDeleteClick = (id: string) => {
-        setDeletingItemId(id);
-    };
-
-    const handleConfirmDelete = async () => {
-        if(deletingItemId) {
-            if (activeTab === 'suppliers') {
-                await removeSupplier(deletingItemId);
-                // Note: Cascading logic to update locations is better handled in a backend/Firebase Function.
-                // For client-side, this would require fetching locations and updating them.
-            } else {
-                await removeLocation(deletingItemId);
-            }
-            alert(`${activeTab === 'suppliers' ? 'Fornitore' : 'Luogo'} eliminato!`);
-            setDeletingItemId(null);
+    useEffect(() => {
+        if(locationModalState?.mode === 'edit') {
+            setLocationFormData(locationModalState.location);
+            setIsShortNameManual(!!locationModalState.location.shortName);
+        } else {
+            setLocationFormData({ color: COLORS[0].hex }); // Default color
+            setIsShortNameManual(false);
         }
-    }
+        setLocationErrors({});
+    }, [locationModalState]);
 
-    const validate = () => {
+    useEffect(() => {
+        if (locationFormData.name && !isShortNameManual) {
+            setLocationFormData(prev => ({ ...prev, shortName: generateShortName(prev.name || '') }));
+        }
+    }, [locationFormData.name, isShortNameManual]);
+
+
+    const closeSupplierModal = () => setSupplierModalState(null);
+    const closeLocationModal = () => setLocationModalState(null);
+
+    const validateSupplier = () => {
         const newErrors: Record<string, string> = {};
-        if (activeTab === 'suppliers') {
-            if (!formData.name?.trim()) newErrors.name = 'Il nome del fornitore è obbligatorio.';
-            if (!formData.vatNumber?.trim()) newErrors.vatNumber = 'La Partita IVA è obbligatoria.';
-        } else if (activeTab === 'locations') {
-            if (!formData.name?.trim()) newErrors.name = 'Il nome del luogo è obbligatorio.';
-            if (!formData.address?.trim()) newErrors.address = "L'indirizzo è obbligatorio.";
-            if (!formData.capacity || parseInt(formData.capacity, 10) <= 0) newErrors.capacity = 'La capienza deve essere un numero positivo.';
-        }
-        setErrors(newErrors);
+        if (!supplierFormData.name?.trim()) newErrors.name = 'Il nome del fornitore è obbligatorio.';
+        setSupplierErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const validateLocation = () => {
+        const newErrors: Record<string, string> = {};
+        if (!locationFormData.name?.trim()) newErrors.name = 'Il nome della sede è obbligatorio.';
+        if (!locationFormData.address?.trim()) newErrors.address = "L'indirizzo è obbligatorio.";
+        if (locationFormData.capacity === undefined || Number(locationFormData.capacity) <= 0) newErrors.capacity = 'La capienza deve essere un numero positivo.';
+        setLocationErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (validate()) {
-            const preparedData: Partial<Supplier & Location> = { ...formData };
-            if (activeTab === 'locations') {
-                preparedData.capacity = parseInt(formData.capacity, 10);
-                if (preparedData.supplierId === '') {
-                    preparedData.supplierId = undefined;
-                }
-            }
+        if (!validateSupplier()) return;
 
-            if (editingItem) {
-                const { id, ...updates } = { ...editingItem, ...preparedData };
-                if (activeTab === 'suppliers') {
-                    await updateSupplier(id, updates);
-                } else {
-                    await updateLocation(id, updates);
-                }
-                alert(`${activeTab === 'suppliers' ? 'Fornitore' : 'Luogo'} aggiornato!`);
+        let supplierId: string;
+        if (supplierModalState?.mode === 'edit') {
+            supplierId = supplierModalState.supplier.id;
+            await updateSupplier(supplierId, supplierFormData);
+        } else {
+            const newSupplier = { name: 'Temp', ...supplierFormData };
+            const docRef = await addSupplier(newSupplier as Omit<Supplier, 'id'>);
+            supplierId = docRef.id;
+        }
+
+        for (const locId of locationsToDelete) {
+            await removeLocation(locId);
+        }
+        
+        for (const loc of locationsInModal) {
+            const locationData: Omit<Location, 'id'> = {
+                supplierId: supplierId,
+                name: loc.name!,
+                address: loc.address!,
+                capacity: Number(loc.capacity!),
+                color: loc.color,
+                shortName: loc.shortName,
+                zipCode: loc.zipCode,
+                city: loc.city,
+                province: loc.province,
+                rentalCost: Number(loc.rentalCost || 0),
+                distanceKm: Number(loc.distanceKm || 0),
+            };
+
+            if (loc.id) {
+                await updateLocation(loc.id, locationData);
             } else {
-                 if (activeTab === 'suppliers') {
-                    const newItem = { id: `sup_${Date.now()}`, ...preparedData } as Supplier;
-                    await addSupplier(newItem);
-                 } else {
-                    const newItem = { id: `loc_${Date.now()}`, ...preparedData } as Location;
-                    await addLocation(newItem);
-                 }
-                alert(`Nuovo ${activeTab === 'suppliers' ? 'Fornitore' : 'Luogo'} salvato!`);
+                await addLocation(locationData);
             }
-            closeModal();
         }
+        
+        alert('Fornitore e sedi salvati con successo!');
+        closeSupplierModal();
     };
     
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData({ ...formData, [e.target.id]: e.target.value });
+    const handleSaveLocation = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!validateLocation()) return;
+
+        if (locationModalState?.mode === 'edit') {
+            const updatedLocations = [...locationsInModal];
+            updatedLocations[locationModalState.index] = { ...updatedLocations[locationModalState.index], ...locationFormData };
+            setLocationsInModal(updatedLocations);
+        } else {
+            setLocationsInModal([...locationsInModal, locationFormData]);
+        }
+        closeLocationModal();
+    };
+    
+    const handleDeleteLocationInModal = (index: number) => {
+        const locationToDelete = locationsInModal[index];
+        if (locationToDelete.id) {
+            setLocationsToDelete([...locationsToDelete, locationToDelete.id]);
+        }
+        const updatedLocations = locationsInModal.filter((_, i) => i !== index);
+        setLocationsInModal(updatedLocations);
     };
 
-    const renderModalContent = () => {
-        const formId = `form-${activeTab}`;
-        const commonButtons = (
-           <div className="flex justify-end space-x-3 pt-4">
-              <button type="button" onClick={closeModal} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Annulla</button>
-              <button type="submit" form={formId} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Salva</button>
-            </div>
-        );
 
-        if (activeTab === 'suppliers') {
-            return (
-                <form id={formId} onSubmit={handleSave} className="space-y-4" noValidate>
-                    <Input id="name" label="Nome Fornitore" type="text" value={formData.name || ''} onChange={handleChange} error={errors.name} required />
-                    <Input id="vatNumber" label="Partita IVA" type="text" value={formData.vatNumber || ''} onChange={handleChange} error={errors.vatNumber} required />
-                    <Input id="address" label="Indirizzo" type="text" value={formData.address || ''} onChange={handleChange} />
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <Input id="zipCode" label="CAP" type="text" value={formData.zipCode || ''} onChange={handleChange} />
-                        <Input id="city" label="Città" type="text" value={formData.city || ''} onChange={handleChange} />
-                        <Input id="province" label="Provincia" type="text" value={formData.province || ''} onChange={handleChange} />
-                    </div>
-                    <Input id="contactPerson" label="Referente" type="text" value={formData.contactPerson || ''} onChange={handleChange} />
-                    <Input id="email" label="Email" type="email" value={formData.email || ''} onChange={handleChange} />
-                    <Input id="phone" label="Telefono" type="tel" value={formData.phone || ''} onChange={handleChange} />
-                    {commonButtons}
-                </form>
-            );
+    const handleConfirmDelete = async () => {
+        if (deletingItem) {
+            if (deletingItem.type === 'supplier') {
+                const supplierLocations = locations.filter(loc => loc.supplierId === deletingItem.id);
+                for (const loc of supplierLocations) {
+                    await removeLocation(loc.id);
+                }
+                await removeSupplier(deletingItem.id);
+            } else {
+                await removeLocation(deletingItem.id);
+            }
+            alert('Elemento eliminato!');
+            setDeletingItem(null);
         }
-        if (activeTab === 'locations') {
-            const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
+    };
 
-            return (
-                <form id={formId} onSubmit={handleSave} className="space-y-4" noValidate>
-                    <Input id="name" label="Nome Luogo" type="text" value={formData.name || ''} onChange={handleChange} error={errors.name} required />
-                    <Input id="address" label="Indirizzo" type="text" value={formData.address || ''} onChange={handleChange} error={errors.address} required />
-                    <Input id="capacity" label="Capienza" type="number" value={formData.capacity || ''} onChange={handleChange} error={errors.capacity} required />
-                    <Select
-                        id="supplierId"
-                        label="Fornitore (Opzionale)"
-                        options={supplierOptions}
-                        placeholder="Nessun fornitore specifico"
-                        value={formData.supplierId || ''}
-                        onChange={handleChange}
+    const renderLocationModal = () => {
+        if (!locationModalState) return null;
+        const title = locationModalState.mode === 'new' ? 'Aggiungi Sede' : 'Modifica Sede';
+
+        return (
+            <Modal isOpen={!!locationModalState} onClose={closeLocationModal} title={title}>
+                 <form id="location-form" onSubmit={handleSaveLocation} className="space-y-4" noValidate>
+                    <Input id="name" label="Nome" value={locationFormData.name || ''} onChange={e => setLocationFormData({ ...locationFormData, name: e.target.value })} error={locationErrors.name} required autoComplete="off" />
+                    <Input 
+                        id="shortName" 
+                        label="Nome Breve (max 4)" 
+                        value={locationFormData.shortName || ''} 
+                        onChange={e => {
+                            setIsShortNameManual(true);
+                            setLocationFormData({ ...locationFormData, shortName: e.target.value });
+                        }} 
+                        maxLength={4}
+                        placeholder="Auto-generato"
+                        autoComplete="off"
                     />
-                    {commonButtons}
+                    <Input id="address" label="Indirizzo" value={locationFormData.address || ''} onChange={e => setLocationFormData({ ...locationFormData, address: e.target.value })} error={locationErrors.address} required autoComplete="street-address" />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <Input id="zipCode" label="CAP" value={locationFormData.zipCode || ''} onChange={e => setLocationFormData({ ...locationFormData, zipCode: e.target.value })} autoComplete="postal-code" />
+                        <Input id="city" label="Città" value={locationFormData.city || ''} onChange={e => setLocationFormData({ ...locationFormData, city: e.target.value })} autoComplete="address-level2" />
+                        <Input id="province" label="Prov" value={locationFormData.province || ''} onChange={e => setLocationFormData({ ...locationFormData, province: e.target.value })} autoComplete="address-level1" />
+                    </div>
+                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <Input id="capacity" label="Max People" type="number" value={locationFormData.capacity || ''} onChange={e => setLocationFormData({ ...locationFormData, capacity: Number(e.target.value) })} error={locationErrors.capacity} required autoComplete="off" />
+                        <Input id="rentalCost" label="Nolo (€)" type="number" step="0.01" value={locationFormData.rentalCost || ''} onChange={e => setLocationFormData({ ...locationFormData, rentalCost: Number(e.target.value) })} autoComplete="off" />
+                        <Input id="distanceKm" label="Distanza (km)" type="number" step="0.1" value={locationFormData.distanceKm || ''} onChange={e => setLocationFormData({ ...locationFormData, distanceKm: Number(e.target.value) })} autoComplete="off" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-testo-input mb-2">Colore Etichetta</label>
+                        <div className="flex flex-wrap gap-2">
+                            {COLORS.map(color => (
+                                <button
+                                    type="button"
+                                    key={color.hex}
+                                    onClick={() => setLocationFormData({ ...locationFormData, color: color.hex })}
+                                    className={`w-8 h-8 rounded-full border-2 transition-transform duration-150 ${locationFormData.color === color.hex ? 'border-bottone-azione scale-110 ring-2 ring-bottone-azione/50' : 'border-transparent'}`}
+                                    style={{ backgroundColor: color.hex }}
+                                    aria-label={`Seleziona colore ${color.name}`}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex justify-end space-x-3 pt-4">
+                        <button type="button" onClick={closeLocationModal} className="px-4 py-2 bg-bottone-annullamento text-testo-input rounded-md hover:opacity-90">Annulla</button>
+                        <button type="submit" form="location-form" className="px-4 py-2 bg-bottone-salvataggio text-white rounded-md hover:opacity-90">Salva Sede</button>
+                    </div>
                 </form>
-            );
-        }
-        return null;
-    };
-    
-    const renderContent = () => {
-        switch (activeTab) {
-            case 'suppliers': return (
-                <div className="space-y-4">
-                    {suppliers.map(supplier => (
-                        <SupplierCard 
-                            key={supplier.id} 
-                            supplier={supplier} 
-                            onEdit={() => handleEditClick(supplier)}
-                            onDelete={() => handleDeleteClick(supplier.id)}
-                        />
-                    ))}
-                </div>
-            );
-            case 'locations': return (
-                 <div className="space-y-4">
-                    {locations.map(loc => (
-                        <LocationCard 
-                            key={loc.id} 
-                            location={loc}
-                            supplierName={loc.supplierId ? supplierMap[loc.supplierId]?.name : null}
-                            onEdit={() => handleEditClick(loc)}
-                            onDelete={() => handleDeleteClick(loc.id)}
-                        />
-                    ))}
-                </div>
-            )
-            default: return null;
-        }
+            </Modal>
+        )
     }
-    
-    const getModalTitle = () => {
-        const action = editingItem ? 'Modifica' : 'Aggiungi';
-        const subject = activeTab === 'suppliers' ? 'Fornitore' : 'Luogo';
-        return `${action} ${subject}`;
+
+    const renderSupplierModal = () => {
+        if (!supplierModalState) return null;
+        const title = supplierModalState.mode === 'new' ? 'Nuovo Fornitore' : 'Modifica Fornitore';
+
+        return (
+             <Modal isOpen={!!supplierModalState} onClose={closeSupplierModal} title={title}>
+                <form id="supplier-form" onSubmit={handleSave} className="space-y-6" noValidate>
+                    {/* Supplier Details */}
+                    <fieldset className="space-y-4 border-b border-black/10 pb-6">
+                         <Input id="name" label="Nome Fornitore" value={supplierFormData.name || ''} onChange={e => setSupplierFormData({ ...supplierFormData, name: e.target.value })} error={supplierErrors.name} required autoComplete="organization" />
+                         <Input id="vatNumber" label="P.IVA / C.F." value={supplierFormData.vatNumber || ''} onChange={e => setSupplierFormData({ ...supplierFormData, vatNumber: e.target.value })} autoComplete="off" />
+                         <Input id="email" label="Email" type="email" value={supplierFormData.email || ''} onChange={e => setSupplierFormData({ ...supplierFormData, email: e.target.value })} autoComplete="email" />
+                         <Input id="phone" label="Telefono" type="tel" value={supplierFormData.phone || ''} onChange={e => setSupplierFormData({ ...supplierFormData, phone: e.target.value })} autoComplete="tel" />
+                         <Input id="contact" label="Referente" value={supplierFormData.contact || ''} onChange={e => setSupplierFormData({ ...supplierFormData, contact: e.target.value })} autoComplete="name" />
+                    </fieldset>
+                    
+                    {/* Locations Management */}
+                    <div>
+                         <div className="flex justify-between items-center mb-3">
+                            <h4 className="font-semibold text-testo-input">Sedi / Luoghi</h4>
+                            <button type="button" onClick={() => setLocationModalState({ mode: 'new' })} className="text-sm text-bottone-azione hover:opacity-80 font-medium flex items-center space-x-1">
+                                <PlusIcon className="h-4 w-4" /><span>Aggiungi Sede</span>
+                            </button>
+                        </div>
+                        <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                            {locationsInModal.map((loc, index) => (
+                                <li key={loc.id || `new-${index}`} className="p-2.5 bg-white/40 rounded-md flex justify-between items-center">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-3 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: loc.color || '#cccccc' }}></div>
+                                        <div>
+                                            <p className="font-semibold text-testo-input">{loc.name}</p>
+                                            <p className="text-xs text-testo-input/80">{loc.address}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                        <button type="button" onClick={() => setLocationModalState({ mode: 'edit', location: loc, index })} className="p-1.5 text-testo-input/80 hover:text-bottone-azione"><PencilIcon className="h-4 w-4" /></button>
+                                        <button type="button" onClick={() => handleDeleteLocationInModal(index)} className="p-1.5 text-testo-input/80 hover:text-bottone-eliminazione"><TrashIcon className="h-4 w-4" /></button>
+                                    </div>
+                                </li>
+                            ))}
+                            {locationsInModal.length === 0 && <p className="text-center text-sm text-testo-input/80 py-4 italic">Nessuna sede aggiunta.</p>}
+                        </ul>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-black/10">
+                        <button type="button" onClick={closeSupplierModal} className="px-4 py-2 bg-bottone-annullamento text-testo-input rounded-md hover:opacity-90">Annulla</button>
+                        <button type="submit" form="supplier-form" className="px-4 py-2 bg-bottone-salvataggio text-white rounded-md hover:opacity-90">Salva Fornitore</button>
+                    </div>
+                </form>
+                {renderLocationModal()}
+            </Modal>
+        )
     }
 
     return (
         <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-slate-700">Gestione Logistica</h2>
-            <Card>
-                <div className="p-4 border-b border-slate-200">
-                    <div className="flex space-x-2">
-                        <TabButton label="Fornitori" isActive={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} />
-                        <TabButton label="Luoghi" isActive={activeTab === 'locations'} onClick={() => setActiveTab('locations')} />
-                    </div>
-                </div>
-                <CardContent>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-semibold text-slate-800 capitalize">{activeTab === 'suppliers' ? 'Fornitori' : 'Luoghi'}</h3>
-                         <button 
-                            onClick={handleAddNewClick}
-                            className="bg-indigo-600 text-white px-3 py-1.5 rounded-md shadow hover:bg-indigo-700 flex items-center space-x-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                          >
-                            <PlusIcon className="h-4 w-4" />
-                            <span>Aggiungi</span>
-                        </button>
-                    </div>
-                   {renderContent()}
-                </CardContent>
-            </Card>
+            <div className="flex justify-between items-center">
+                 <h2 className="text-xl font-semibold text-testo-input">Logistica e Fornitori</h2>
+                 <button onClick={() => setSupplierModalState({ mode: 'new' })} className="bg-bottone-azione text-white px-4 py-2 rounded-full shadow hover:opacity-90 flex items-center space-x-2 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-bottone-azione">
+                    <PlusIcon /><span>Nuovo Fornitore</span>
+                </button>
+            </div>
+            
+            <div className="space-y-4">
+                {suppliers.map(supplier => {
+                    const supplierLocations = locations.filter(loc => loc.supplierId === supplier.id);
+                    return (
+                        <div key={supplier.id}>
+                            <Card>
+                                <CardContent>
+                                    <div className="flex justify-between items-start pb-4 border-b border-black/10">
+                                        <div>
+                                            <h4 className="font-bold text-lg text-testo-input">{supplier.name}</h4>
+                                            <p className="text-sm text-testo-input/80">{supplier.email} {supplier.phone && ` - ${supplier.phone}`}</p>
+                                            <p className="text-sm text-testo-input/80">{supplier.vatNumber && `P.IVA: ${supplier.vatNumber}`} {supplier.contact && `- Ref: ${supplier.contact}`}</p>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <button onClick={() => setSupplierModalState({ mode: 'edit', supplier })} className="p-2 text-testo-input/80 hover:text-bottone-azione rounded-full hover:bg-white/30" aria-label="Modifica Fornitore"><PencilIcon className="h-5 w-5"/></button>
+                                            <button onClick={() => setDeletingItem({ type: 'supplier', id: supplier.id, name: supplier.name })} className="p-2 text-testo-input/80 hover:text-bottone-eliminazione rounded-full hover:bg-red-50" aria-label="Elimina Fornitore"><TrashIcon className="h-5 w-5"/></button>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4">
+                                        <h5 className="font-semibold text-testo-input mb-2 text-sm">Sedi / Luoghi</h5>
+                                        {supplierLocations.length > 0 ? (
+                                            <ul className="space-y-2">
+                                                {supplierLocations.map(location => (
+                                                    <li key={location.id} className="p-2.5 bg-white/30 rounded-md flex items-center space-x-4">
+                                                        <div className="w-3 h-12 rounded-full flex-shrink-0" style={{ backgroundColor: location.color || '#cccccc' }}></div>
+                                                        <div>
+                                                            <p className="font-semibold text-testo-input">{location.name} (Capienza: {location.capacity})</p>
+                                                            <p className="text-xs text-testo-input/80">{location.address}</p>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            <p className="text-sm text-testo-input/80 italic px-2">Nessuna sede associata a questo fornitore.</p>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    );
+                })}
+            </div>
+            
+            {renderSupplierModal()}
 
-             <Modal isOpen={isModalOpen} onClose={closeModal} title={getModalTitle()}>
-                {renderModalContent()}
-            </Modal>
             <ConfirmModal
-                isOpen={!!deletingItemId}
-                onClose={() => setDeletingItemId(null)}
+                isOpen={!!deletingItem}
+                onClose={() => setDeletingItem(null)}
                 onConfirm={handleConfirmDelete}
-                title="Conferma Eliminazione"
+                title={`Conferma Eliminazione ${deletingItem?.type === 'supplier' ? 'Fornitore' : 'Sede'}`}
             >
-                <p>Sei sicuro di voler eliminare questo elemento? L'azione è irreversibile.</p>
+                <p>
+                    {deletingItem?.type === 'supplier' 
+                        ? `Sei sicuro di voler eliminare il fornitore "${deletingItem?.name}"? Verranno eliminate anche tutte le sue sedi associate. L'azione è irreversibile.`
+                        : `Sei sicuro di voler eliminare la sede "${deletingItem?.name}"? L'azione è irreversibile.`
+                    }
+                </p>
             </ConfirmModal>
         </div>
-    )
+    );
 };
 
 export default LogisticsView;
